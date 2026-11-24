@@ -16,11 +16,15 @@
 
 # %% IMPORTS
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy.linalg import solve, cond
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.solver.solve_prescribed import solve_prescribed
 
 # %% DATA INPUT
 
@@ -64,10 +68,7 @@ R = np.zeros((c.size,ubar.size))    # reactions
 Uw = np.zeros((nN,ubar.size))       # the same without -K(f,c)*U(c): wrong unless ubar = 0
 Up = np.zeros((nN,ubar.size))       # the same by penalty
 for s in range(ubar.size):
-    # partition: K(f,f)*U(f) = F(f) - K(f,c)*U(c)
-    U[c,s] = ubar[s]
-    U[f,s] = solve(K[np.ix_(f,f)],F[f] - K[np.ix_(f,c)]@U[c,s])
-    R[:,s] = K[c,:]@U[:,s] - F[c]
+    U[:, s], R[:, s] = solve_prescribed(K, F, c, np.full(c.size, ubar[s]))
     # the commonest mistake: the row & column of c deleted, the right-hand side not corrected
     Uw[c,s] = ubar[s]
     Uw[f,s] = solve(K[np.ix_(f,f)],F[f])

@@ -13,6 +13,9 @@
 % Last updated: 22/11/2026 by Claude
 % Double checked on: -
 
+%% PROJECT PATH
+addpath(fullfile(fileparts(mfilename('fullpath')),'..','..','core','solver'));
+
 %% DATA INPUT
 
 % springs [node i , node j , stiffness ke (N/m)], one row per spring
@@ -56,10 +59,7 @@ R = zeros(numel(c),numel(ubar)); % reactions
 Uw = zeros(nN,numel(ubar));     % the same without -K(f,c)*U(c): wrong unless ubar = 0
 Up = zeros(nN,numel(ubar));     % the same by penalty
 for s = 1:numel(ubar)
-    % partition: K(f,f)*U(f) = F(f) - K(f,c)*U(c)
-    U(c,s) = ubar(s);
-    U(f,s) = K(f,f)\(F(f) - K(f,c)*U(c,s));
-    R(:,s) = K(c,:)*U(:,s) - F(c);
+    [U(:,s),R(:,s)] = SV_Prescribed(K,F,c,repmat(ubar(s),numel(c),1));
     % the commonest mistake: the row & column of c deleted, the right-hand side not corrected
     Uw(c,s) = ubar(s);
     Uw(f,s) = K(f,f)\F(f);
