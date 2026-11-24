@@ -1,0 +1,174 @@
+# Title: Code for a System of Springs by the Direct Stiffness Method
+# Attempt: to assemble the element matrices into [K], hold a node (at zero
+#          or not), solve & recover the reaction, against the closed form
+#          of springs in series (P1 of the ladder)
+# Created on: 22/11/2026 by Claude (not yet double checked by Razin)
+#   on the author's word of 22/11/2026 (the problems of his ladder one by
+#   one, from the simplest): P1 of "A Graded Catalogue of Computational
+#   Mechanics Problems for Civil Engineering" (v0.1, 22/11/2026). The
+#   sections are those of MAIN_PlateWithHole.m; no routine of core/ is
+#   needed. The support is held by partition, & by penalty for comparison
+# Last updated: 22/11/2026 by Claude
+# Double checked on: -
+# Ported to Python on: 22/11/2026 (line by line from MAIN_SpringSystem.m)
+#   the node numbers of the data (Spr, Fn, Su) are those of the MATLAB,
+#   counted from 1; they are taken less 1 where they index an array
+
+# %% IMPORTS
+import os
+from pathlib import Path
+
+import numpy as np
+import matplotlib.pyplot as plt
+from numpy.linalg import solve, cond
+
+# %% DATA INPUT
+
+# springs [node i , node j , stiffness ke (N/m)], one row per spring
+Spr = np.array([[1, 2, 2000],
+                [2, 3,  500]], dtype=float)
+nN = 3 # number of nodes
+
+# Applied Forces [node , force (N)]
+Fn = np.array([[3, 100]], dtype=float)
+
+# Support conditions: node Su is held at the displacement ubar (m); the
+# figure of the catalogue (0), & a value that is not 0, which shows the term
+# -K(f,c)*U(c) that is most often forgotten
+Su = np.array([1])
+ubar = np.array([0, 0.01])
+
+# penalty factor, times max(diag(K)) (as the meshless problems hold their supports)
+Alpha = 1e6
+
+
+# %% STIFFNESS MATRIX (assembly of the element matrices)
+K = np.zeros((nN,nN))
+for e in range(Spr.shape[0]):
+    # loop over springs
+    ij = Spr[e,0:2].astype(int)-1
+    K[np.ix_(ij,ij)] = K[np.ix_(ij,ij)] + Spr[e,2]*np.array([[1, -1], [-1, 1]])
+# before the support every row adds up to zero: the rigid motion, [K] is singular
+Krow = np.max(np.abs(np.sum(K,axis=1)))/np.max(np.abs(K))
+
+# Force vector
+F = np.zeros(nN)
+np.add.at(F,Fn[:,0].astype(int)-1,Fn[:,1])
+
+
+# %% SUPPORTS, SOLUTION & REACTIONS (one column for each value of ubar)
+c = Su-1                            # constrained unknowns
+f = np.setdiff1d(np.arange(nN),c)   # free unknowns
+U = np.zeros((nN,ubar.size))        # displacements by partition
+R = np.zeros((c.size,ubar.size))    # reactions
+Uw = np.zeros((nN,ubar.size))       # the same without -K(f,c)*U(c): wrong unless ubar = 0
+Up = np.zeros((nN,ubar.size))       # the same by penalty
+for s in range(ubar.size):
+    # partition: K(f,f)*U(f) = F(f) - K(f,c)*U(c)
+    U[c,s] = ubar[s]
+    U[f,s] = solve(K[np.ix_(f,f)],F[f] - K[np.ix_(f,c)]@U[c,s])
+    R[:,s] = K[c,:]@U[:,s] - F[c]
+    # the commonest mistake: the row & column of c deleted, the right-hand side not corrected
+    Uw[c,s] = ubar[s]
+    Uw[f,s] = solve(K[np.ix_(f,f)],F[f])
+    # penalty: Alpha*max(diag(K)) added to K(c,c), & times ubar to F(c)
+    Kp = K.copy(); Fp = F.copy()
+    Kp[np.ix_(c,c)] = Kp[np.ix_(c,c)] + Alpha*np.max(np.diag(K))*np.eye(c.size)
+    Fp[c] = Fp[c] + Alpha*np.max(np.diag(K))*ubar[s]
+    Up[:,s] = solve(Kp,Fp)
+condKff = cond(K[np.ix_(f,f)])
+condKp = cond(Kp)
+
+
+# %% COMPARE WITH THE EXACT SOLUTION
+
+# springs in series (spring e joins nodes e & e+1), node 1 held at ubar, the
+# force at the last node: u(I) = ubar + F*sum(1/ke) over the springs before
+# node I, & R1 = -F
+Uex = ubar[None,:] + Fn[0,1]*np.r_[0, np.cumsum(1/Spr[:,2])][:,None]
+Rex = -Fn[0,1]
+
+# largest error of the displacements, of the largest displacement (one per ubar)
+eU = np.max(np.abs(U-Uex),axis=0)/np.max(np.abs(Uex),axis=0)
+eC = np.max(np.abs(Uw-Uex),axis=0)/np.max(np.abs(Uex),axis=0)
+eP = np.max(np.abs(Up-Uex),axis=0)/np.max(np.abs(Uex),axis=0)
+
+# equilibrium: the reactions & the applied forces add up to zero
+eR = np.abs(np.sum(R,axis=0) + np.sum(F))/np.abs(Fn[0,1])
+
+
+# %% POST-PROCESSING
+# Positive extension and force mean tension, with each spring directed i -> j.
+ends = Spr[:, :2].astype(int) - 1
+extension = U[ends[:, 1], :] - U[ends[:, 0], :]
+spring_force = Spr[:, 2, None] * extension
+equilibrium_residual = K @ U - F[:, None]
+equilibrium_residual[c, :] -= R
+
+# %% DISPLAY RESULTS
+print('Row sums of [K] before the support = %.1e of its largest entry' % Krow)
+for s in range(ubar.size):
+    print('u1 = %g m:' % ubar[s])
+    print('  u  = %s m (exact %s)' % (np.array2string(U[:,s],precision=8),np.array2string(Uex[:,s],precision=8)))
+    print('  R1 = %.8g N (exact %g); R1 + sum(F) = %.1e of F' % (R[0,s],Rex,eR[s]))
+    print('  Spring extensions (m):', extension[:, s])
+    print('  Spring forces (N, tension positive):', spring_force[:, s])
+    print('  Largest nodal equilibrium residual: %.1e N' % np.max(np.abs(equilibrium_residual[:, s])))
+    print('  error: partition %.1e, penalty %.1e, without -K(f,c)*U(c) %.1e' % (eU[s],eP[s],eC[s]))
+print('Condition number: K(f,f) %.2f, with the penalty %.2e' % (condKff,condKp))
+print('=> Displacement of node %d = %.8g m (exact %.8g)' % (nN,U[nN-1,0],Uex[nN-1,0]))
+
+# %% PLOTS
+nodes = np.arange(1, nN + 1)
+elements = np.arange(1, len(Spr) + 1)
+fig, axes = plt.subplots(2, 2, figsize=(10, 7), layout="constrained")
+
+for s, ax in enumerate(axes[0]):
+    ax.plot(nodes, Uex[:, s], "k-", label="Closed form")
+    ax.plot(nodes, U[:, s], "ro", fillstyle="none", label="Partition")
+    ax.plot(nodes, Uw[:, s], "bx", label="Omitted support term")
+    ax.plot(nodes, Up[:, s], "g+", label="Penalty")
+    ax.set(xlabel="Node", ylabel="Displacement (m)", xticks=nodes,
+           title=f"Support displacement = {ubar[s]:g} m")
+    ax.grid(True, alpha=0.3)
+axes[0, 0].legend()
+
+for s, marker in enumerate(("o", "x")):
+    axes[1, 0].plot(elements, spring_force[:, s], marker, fillstyle="none",
+                    label=f"Support = {ubar[s]:g} m")
+axes[1, 0].set(xlabel="Spring", ylabel="Axial force (N)", xticks=elements,
+               title="Spring forces (tension positive)")
+axes[1, 0].legend()
+
+reactions = np.zeros_like(U)
+reactions[c, :] = R
+axes[1, 1].bar(nodes - 0.18, F, width=0.36, label="Applied force")
+for s, marker in enumerate(("o", "x")):
+    axes[1, 1].plot(nodes, reactions[:, s], marker, fillstyle="none",
+                    label=f"Reaction, support = {ubar[s]:g} m")
+axes[1, 1].axhline(0, color="0.4", linewidth=0.8)
+axes[1, 1].set(xlabel="Node", ylabel="Force (N)", xticks=nodes,
+               title="Applied forces and reactions")
+axes[1, 1].legend()
+
+# %% OPTIONAL EXPORT
+output_dir = os.environ.get("P1_OUTPUT_DIR")
+if output_dir:
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    nodal_rows = np.vstack([
+        np.column_stack((np.full(nN, support), nodes, U[:, s], Uex[:, s],
+                         Up[:, s], Uw[:, s], F, reactions[:, s], equilibrium_residual[:, s]))
+        for s, support in enumerate(ubar)
+    ])
+    spring_rows = np.vstack([
+        np.column_stack((np.full(len(Spr), support), elements, Spr, extension[:, s], spring_force[:, s]))
+        for s, support in enumerate(ubar)
+    ])
+    np.savetxt(output / "p1_nodal_python.csv", nodal_rows, delimiter=",", fmt="%.16g",
+               comments="", header="support_m,node,partition_m,exact_m,penalty_m,omitted_term_m,applied_N,reaction_N,residual_N")
+    np.savetxt(output / "p1_springs_python.csv", spring_rows, delimiter=",", fmt="%.16g",
+               comments="", header="support_m,spring,node_i,node_j,stiffness_N_per_m,extension_m,axial_force_N")
+    fig.savefig(output / "p1_results_python.png", dpi=160)
+
+plt.show()
