@@ -54,3 +54,55 @@ DOFs. Assembly, the closed-form comparison and plots are part of the P1 example.
 ### Provenance
 
 The P1 drivers and validation checks were adapted from [MSNM Numerical Modules 3 at commit 768eb88](https://github.com/RazinUTM/MSNM-Numerical-Modules-3/tree/768eb886069900ef318701a6a9776beb10d2a6db). This version adds post-processing and runs from this checkout. The original authorship notices and [MIT license](LICENSE) accompany the code.
+
+## P2 — Axial bar by 1D finite elements
+
+The example uses an axially loaded bar of length 2 m with a linearly tapered
+area, a distributed axial load of 50 kN/m, and an end force of 50 kN. Start
+with eight linear elements. The separate convergence study compares
+linear and quadratic elements on five meshes, for uniform and tapered bars.
+
+```matlab
+run('problems/AxialBar/MAIN_AxialBar.m')
+run('studies/AxialBar/STUDY_AxialBarConvergence.m')
+```
+
+```sh
+python problems/AxialBar/main_axial_bar.py
+python studies/AxialBar/study_axial_bar_convergence.py
+python -m pytest -q tests
+```
+
+To run both P2 MATLAB checks from the VS Code terminal at the repository root:
+
+```sh
+matlab -batch "addpath(fullfile(pwd,'tests')); TEST_AxialBar; TEST_AxialBarStudy"
+```
+
+### Follow the calculation
+
+1. `SF_FEMLG1D` and `GQ_Points` in `core/` supply the 1D Lagrange functions and
+   Gauss quadrature. `KM_Line1D` integrates element matrices and loads.
+2. `AS_Global` accumulates the element matrices by DOF number. P1 also uses
+   this routine. The shared prescribed-displacement solver returns the
+   displacements and support reaction.
+3. `SF_Line1D` evaluates the solution and its derivative in each element.
+   `UT_AxialBar` supplies the closed form. `PL_AxialBar` plots the nodal
+   displacements and the axial force on each element against that reference.
+
+For the eight-element example, the free-end displacement is about
+**1.30734 mm**, the exact value is **1.30685 mm**, and the reaction is
+**−150 kN**. The relative displacement L2 error is about `7.504e-4`
+and the relative energy error is about `1.344e-2`. For the tapered bar,
+the study gives L2 rates near 2 and 3 and energy rates near 1 and 2 for
+linear and quadratic elements, respectively.
+
+Set `P2_OUTPUT_DIR` to an absolute directory before running the main example
+to save the displacement and axial force CSVs and the profile plot PNG. Each
+force row includes its element number so that the two element-side values at
+a shared node can be distinguished. As with P1, each language uses its own
+filename suffix.
+
+The P2 example, study, numerical kernels and validations were adapted from
+[MSNM Numerical Modules 3 at commit 7a17b00](https://github.com/RazinUTM/MSNM-Numerical-Modules-3/tree/7a17b007fc6b9f83790b6f8b7b4520a8c05629a2).
+MATLAB results in the source headers refer to validation in MSNM3.

@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 from numpy.linalg import solve, cond
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.assembly.as_global import as_global
 from core.solver.solve_prescribed import solve_prescribed
 
 # %% DATA INPUT
@@ -51,7 +52,7 @@ K = np.zeros((nN,nN))
 for e in range(Spr.shape[0]):
     # loop over springs
     ij = Spr[e,0:2].astype(int)-1
-    K[np.ix_(ij,ij)] = K[np.ix_(ij,ij)] + Spr[e,2]*np.array([[1, -1], [-1, 1]])
+    as_global(K, Spr[e,2]*np.array([[1, -1], [-1, 1]]), ij)
 # before the support every row adds up to zero: the rigid motion, [K] is singular
 Krow = np.max(np.abs(np.sum(K,axis=1)))/np.max(np.abs(K))
 

@@ -14,7 +14,8 @@
 % Double checked on: -
 
 %% PROJECT PATH
-addpath(fullfile(fileparts(mfilename('fullpath')),'..','..','core','solver'));
+projectRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+addpath(fullfile(projectRoot,'core','solver'),fullfile(projectRoot,'core','assembly'));
 
 %% DATA INPUT
 
@@ -41,7 +42,7 @@ K = zeros(nN);
 for e = 1:size(Spr,1)
     % loop over springs
     ij = Spr(e,1:2);
-    K(ij,ij) = K(ij,ij) + Spr(e,3)*[1 -1; -1 1];
+    K = AS_Global(K,Spr(e,3)*[1 -1; -1 1],ij);
 end
 % before the support every row adds up to zero: the rigid motion, [K] is singular
 Krow = max(abs(sum(K,2)))/max(abs(K(:)));
